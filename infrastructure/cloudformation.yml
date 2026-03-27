@@ -1,0 +1,115 @@
+# Adobe Express - AWS Infrastructure
+# CloudFormation Template
+# Covers: S3, CloudFront, ElastiCache (Redis), RDS, ECS
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Adobe Express Mock - Full Stack Infrastructure'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+
+Resources:
+
+  # ─────────────────────────────
+  # S3 - Asset Storage (PRIVATE)
+  # ─────────────────────────────
+  AssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'adobe-express-assets-${Environment}'
+      # Never public - always served via CloudFront signed URLs
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+
+  # ─────────────────────────────
+  # CloudFront - CDN for assets
+  # ─────────────────────────────
+  AssetsDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt AssetsBucket.DomainName
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${OAI}'
+        DefaultCacheBehavior:
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          TargetOriginId: S3Origin
+        PriceClass: PriceClass_100
+        Enabled: true
+        HttpVersion: http2
+
+  # CloudFront Origin Access Identity
+  OAI:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Sub 'OAI for adobe-express-${Environment}'
+
+  # ─────────────────────────────
+  # ElastiCache - Redis for caching
+  # ─────────────────────────────
+  RedisCluster:
+    Type: AWS::ElastiCache::ReplicationGroup
+    Properties:
+      ReplicationGroupDescription: 'Adobe Express Redis Cache'
+      NumCacheClusters: 2          # Primary + 1 replica for HA
+      CacheNodeType: cache.t3.micro
+      Engine: redis
+      EngineVersion: '7.0'
+      AutomaticFailoverEnabled: true
+      AtRestEncryptionEnabled: true
+      TransitEncryptionEnabled: true
+
+  # ─────────────────────────────
+  # RDS - MySQL for URL/template data
+  # ─────────────────────────────
+  Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub 'adobe-express-db-${Environment}'
+      DBInstanceClass: db.t3.micro
+      Engine: mysql
+      EngineVersion: '8.0'
+      MasterUsername: admin
+      MasterUserPassword: !Sub '{{resolve:ssm:/adobe-express/${Environment}/db-password}}'
+      AllocatedStorage: 20
+      StorageEncrypted: true
+      MultiAZ: !If [IsProd, true, false]
+      BackupRetentionPeriod: 7
+      DeletionProtection: !If [IsProd, true, false]
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+
+Outputs:
+  AssetsBucketName:
+    Value: !Ref AssetsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-AssetsBucket'
+
+  CloudFrontDomain:
+    Value: !GetAtt AssetsDistribution.DomainName
+    Export:
+      Name: !Sub '${AWS::StackName}-CDNDomain'
+
+  RedisEndpoint:
+    Value: !GetAtt RedisCluster.PrimaryEndPoint.Address
+    Export:
+      Name: !Sub '${AWS::StackName}-RedisEndpoint'
