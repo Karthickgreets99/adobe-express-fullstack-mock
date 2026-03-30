@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adobe Express — AWS Architecture</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0e1a;
+  --bg2: #0f1628;
+  --bg3: #141c35;
+  --border: rgba(255,255,255,0.07);
+  --border-bright: rgba(255,255,255,0.15);
+  --text: #e8eaf6;
+  --muted: rgba(232,234,246,0.45);
+  --accent-blue: #4f9eff;
+  --accent-cyan: #00d4ff;
+  --accent-green: #00e5a0;
+  --accent-amber: #ffb347;
+  --accent-red: #ff6b6b;
+  --accent-purple: #b794f4;
+  --glow-blue: rgba(79,158,255,0.15);
+  --glow-green: rgba(0,229,160,0.15);
+  --glow-amber: rgba(255,179,71,0.15);
+  --glow-red: rgba(255,107,107,0.15);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Animated grid background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(79,158,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(79,158,255,0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Floating orbs */
+.orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.12;
+  pointer-events: none;
+  z-index: 0;
+  animation: floatOrb 12s ease-in-out infinite;
+}
+.orb1 { width: 400px; height: 400px; background: var(--accent-blue); top: -100px; left: -100px; animation-delay: 0s; }
+.orb2 { width: 300px; height: 300px; background: var(--accent-cyan); bottom: 100px; right: -50px; animation-delay: -4s; }
+.orb3 { width: 250px; height: 250px; background: var(--accent-purple); top: 50%; left: 50%; animation-delay: -8s; }
+
+@keyframes floatOrb {
+  0%, 100% { transform: translate(0, 0); }
+  33% { transform: translate(30px, -20px); }
+  66% { transform: translate(-20px, 30px); }
+}
+
+/* Header */
+header {
+  position: relative;
+  z-index: 10;
+  padding: 28px 40px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(10,14,26,0.8);
+  backdrop-filter: blur(20px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.logo-row { display: flex; align-items: center; gap: 16px; }
+.logo-icon {
+  width: 44px; height: 44px;
+  background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.3px; }
+h1 span { color: var(--accent-cyan); }
+.subtitle { font-size: 12px; color: var(--muted); margin-top: 2px; font-family: 'Space Mono', monospace; }
+
+.header-badges { display: flex; gap: 8px; flex-wrap: wrap; }
+.badge {
+  font-size: 11px; font-weight: 500;
+  padding: 4px 12px; border-radius: 99px;
+  border: 1px solid;
+  font-family: 'Space Mono', monospace;
+  letter-spacing: 0.02em;
+}
+.badge-blue   { border-color: var(--accent-blue);   color: var(--accent-blue);   background: rgba(79,158,255,0.08); }
+.badge-green  { border-color: var(--accent-green);  color: var(--accent-green);  background: rgba(0,229,160,0.08); }
+.badge-amber  { border-color: var(--accent-amber);  color: var(--accent-amber);  background: rgba(255,179,71,0.08); }
+.badge-purple { border-color: var(--accent-purple); color: var(--accent-purple); background: rgba(183,148,244,0.08); }
+
+/* Tab nav */
+.tabs {
+  position: relative; z-index: 10;
+  display: flex; gap: 4px;
+  padding: 16px 40px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(10,14,26,0.6);
+  backdrop-filter: blur(20px);
+}
+.tab-btn {
+  padding: 8px 20px; border-radius: 8px;
+  font-size: 13px; font-weight: 500;
+  border: 1px solid transparent;
+  cursor: pointer; transition: all 0.2s;
+  background: transparent; color: var(--muted);
+}
+.tab-btn:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+.tab-btn.active {
+  color: var(--accent-cyan);
+  background: rgba(0,212,255,0.08);
+  border-color: rgba(0,212,255,0.2);
+}
+
+/* Main canvas */
+.canvas {
+  position: relative; z-index: 5;
+  padding: 32px 40px;
+  display: none;
+}
+.canvas.active { display: block; }
+
+/* ── ARCHITECTURE VIEW ── */
+.arch-wrapper {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  position: relative;
+}
+
+/* Layer */
+.layer {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 0;
+  margin-bottom: 0;
+}
+
+.layer-label {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 20px;
+  gap: 8px;
+  writing-mode: horizontal-tb;
+}
+.layer-label-text {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.layer-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+
+.layer-content {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px 24px;
+  margin-bottom: 8px;
+  position: relative;
+  backdrop-filter: blur(10px);
+  transition: border-color 0.3s;
+}
+.layer-content:hover { border-color: var(--border-bright); }
+
+.layer-client   .layer-content { background: rgba(79,158,255,0.04);  border-color: rgba(79,158,255,0.15); }
+.layer-edge     .layer-content { background: rgba(0,229,160,0.04);   border-color: rgba(0,229,160,0.15); }
+.layer-compute  .layer-content { background: rgba(183,148,244,0.04); border-color: rgba(183,148,244,0.15); }
+.layer-data     .layer-content { background: rgba(255,107,107,0.04); border-color: rgba(255,107,107,0.15); }
+.layer-ops      .layer-content { background: rgba(255,179,71,0.04);  border-color: rgba(255,179,71,0.15); }
+
+.layer-inner-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 16px;
+  font-family: 'Space Mono', monospace;
+}
+.layer-client   .layer-inner-label { color: var(--accent-blue); }
+.layer-edge     .layer-inner-label { color: var(--accent-green); }
+.layer-compute  .layer-inner-label { color: var(--accent-purple); }
+.layer-data     .layer-inner-label { color: var(--accent-red); }
+.layer-ops      .layer-inner-label { color: var(--accent-amber); }
+
+/* Service cards grid */
+.services { display: flex; gap: 12px; flex-wrap: wrap; }
+
+.svc {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  min-width: 150px;
+  max-width: 200px;
+  cursor: pointer;
+  transition: all 0.25s;
+  position: relative;
+  overflow: hidden;
+}
+.svc::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  border-radius: 12px 12px 0 0;
+  transition: opacity 0.3s;
+  opacity: 0;
+}
+.svc:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: var(--border-bright);
+  transform: translateY(-2px);
+}
+.svc:hover::before { opacity: 1; }
+.svc.selected {
+  border-color: var(--accent-cyan) !important;
+  background: rgba(0,212,255,0.06) !important;
+  box-shadow: 0 0 20px rgba(0,212,255,0.1);
+}
+
+.svc-blue::before   { background: var(--accent-blue); }
+.svc-green::before  { background: var(--accent-green); }
+.svc-purple::before { background: var(--accent-purple); }
+.svc-amber::before  { background: var(--accent-amber); }
+.svc-red::before    { background: var(--accent-red); }
+.svc-cyan::before   { background: var(--accent-cyan); }
+
+.svc-icon { font-size: 22px; margin-bottom: 8px; }
+.svc-name { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+.svc-desc { font-size: 11px; color: var(--muted); line-height: 1.4; }
+.svc-tag {
+  position: absolute; top: 8px; right: 8px;
+  font-size: 9px; font-weight: 700;
+  padding: 2px 6px; border-radius: 4px;
+  font-family: 'Space Mono', monospace;
+  letter-spacing: 0.05em;
+}
+.tag-p0 { background: rgba(255,107,107,0.2); color: var(--accent-red); }
+.tag-aws { background: rgba(255,179,71,0.15); color: var(--accent-amber); }
+.tag-cache { background: rgba(0,229,160,0.15); color: var(--accent-green); }
+.tag-pri { background: rgba(79,158,255,0.15); color: var(--accent-blue); }
+
+/* Flow connector */
+.flow-connector {
+  display: flex;
+  align-items: center;
+  padding: 6px 0 6px 140px;
+  gap: 12px;
+}
+.flow-line {
+  flex: 1;
+  height: 1px;
+  position: relative;
+  overflow: visible;
+}
+.flow-line::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+  animation: flowPulse 3s ease-in-out infinite;
+}
+@keyframes flowPulse {
+  0%, 100% { opacity: 0.2; transform: scaleX(0.5); }
+  50% { opacity: 1; transform: scaleX(1); }
+}
+.flow-arrow { color: var(--accent-cyan); font-size: 14px; flex-shrink: 0; }
+.flow-tags { display: flex; gap: 6px; flex-shrink: 0; }
+.flow-tag {
+  font-size: 10px; font-family: 'Space Mono', monospace;
+  padding: 2px 8px; border-radius: 4px;
+  background: rgba(0,212,255,0.08);
+  border: 1px solid rgba(0,212,255,0.2);
+  color: var(--accent-cyan);
+  white-space: nowrap;
+}
+
+/* ── DETAIL PANEL ── */
+.detail-panel {
+  position: fixed;
+  right: 0; top: 0; bottom: 0;
+  width: 380px;
+  background: rgba(15,22,40,0.97);
+  border-left: 1px solid var(--border-bright);
+  backdrop-filter: blur(30px);
+  z-index: 1000;
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+  overflow-y: auto;
+}
+.detail-panel.open { transform: translateX(0); }
+
+.panel-header {
+  padding: 24px 24px 20px;
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0;
+  background: rgba(15,22,40,0.97);
+  backdrop-filter: blur(30px);
+  z-index: 1;
+}
+.panel-close {
+  float: right;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: rgba(255,255,255,0.07);
+  border: none; cursor: pointer; color: var(--muted);
+  font-size: 14px; line-height: 28px; text-align: center;
+  transition: background 0.2s;
+}
+.panel-close:hover { background: rgba(255,255,255,0.12); color: var(--text); }
+.panel-icon { font-size: 32px; margin-bottom: 10px; }
+.panel-title { font-size: 18px; font-weight: 600; margin-bottom: 3px; }
+.panel-svc   { font-size: 12px; color: var(--muted); font-family: 'Space Mono', monospace; }
+
+.panel-body { padding: 24px; }
+
+.panel-section { margin-bottom: 22px; }
+.panel-section-title {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.1em;
+  color: var(--muted); margin-bottom: 12px;
+  font-family: 'Space Mono', monospace;
+}
+.config-row {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+  font-size: 13px; gap: 12px;
+}
+.config-row:last-child { border-bottom: none; }
+.config-key { color: var(--muted); flex-shrink: 0; }
+.config-val { color: var(--text); font-weight: 500; text-align: right; font-family: 'Space Mono', monospace; font-size: 12px; }
+
+.why-box {
+  background: rgba(0,212,255,0.05);
+  border: 1px solid rgba(0,212,255,0.15);
+  border-radius: 10px;
+  padding: 14px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: rgba(0,212,255,0.9);
+}
+
+.sec-item {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 7px 0; border-bottom: 1px solid var(--border);
+  font-size: 13px; line-height: 1.4; color: var(--text);
+}
+.sec-item:last-child { border-bottom: none; }
+.sec-check { color: var(--accent-green); flex-shrink: 0; font-size: 14px; margin-top: 1px; }
+
+/* ── DATA FLOW VIEW ── */
+.flow-view { max-width: 900px; margin: 0 auto; }
+
+.flow-title {
+  text-align: center; margin-bottom: 40px;
+}
+.flow-title h2 { font-size: 22px; font-weight: 600; margin-bottom: 6px; }
+.flow-title p  { font-size: 14px; color: var(--muted); }
+
+.sequence {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.seq-row {
+  display: grid;
+  grid-template-columns: 40px 1fr 80px;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+  opacity: 0;
+  transform: translateX(-20px);
+  transition: opacity 0.4s, transform 0.4s;
+}
+.seq-row.visible { opacity: 1; transform: translateX(0); }
+
+.seq-num {
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Space Mono', monospace;
+  font-size: 12px; font-weight: 700; flex-shrink: 0;
+}
+
+.seq-content { }
+.seq-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.seq-desc  { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.seq-actors { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.seq-actor {
+  font-size: 10px; font-family: 'Space Mono', monospace;
+  padding: 2px 8px; border-radius: 4px;
+  border: 1px solid var(--border-bright);
+  color: var(--muted);
+}
+.seq-arrow {
+  font-size: 20px; text-align: center;
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:1} }
+
+/* ── STATS VIEW ── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+.stat-card {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 22px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.25s;
+}
+.stat-card:hover {
+  background: rgba(255,255,255,0.05);
+  border-color: var(--border-bright);
+  transform: translateY(-2px);
+}
+.stat-card::after {
+  content: '';
+  position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+}
+.stat-card.blue::after  { background: var(--accent-blue); }
+.stat-card.green::after { background: var(--accent-green); }
+.stat-card.amber::after { background: var(--accent-amber); }
+.stat-card.red::after   { background: var(--accent-red); }
+.stat-card.cyan::after  { background: var(--accent-cyan); }
+.stat-card.purple::after{ background: var(--accent-purple); }
+
+.stat-icon { font-size: 28px; margin-bottom: 12px; }
+.stat-val  { font-size: 28px; font-weight: 700; font-family: 'Space Mono', monospace; margin-bottom: 4px; }
+.stat-lbl  { font-size: 12px; color: var(--muted); }
+
+.stat-card.blue   .stat-val { color: var(--accent-blue); }
+.stat-card.green  .stat-val { color: var(--accent-green); }
+.stat-card.amber  .stat-val { color: var(--accent-amber); }
+.stat-card.red    .stat-val { color: var(--accent-red); }
+.stat-card.cyan   .stat-val { color: var(--accent-cyan); }
+.stat-card.purple .stat-val { color: var(--accent-purple); }
+
+/* Interview tips */
+.tips-section {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+}
+.tips-title {
+  font-size: 14px; font-weight: 600;
+  margin-bottom: 16px;
+  display: flex; align-items: center; gap: 8px;
+}
+.tips-title::before {
+  content: '';
+  width: 3px; height: 16px; border-radius: 2px;
+  background: var(--accent-cyan); display: inline-block;
+}
+.tip-row {
+  display: flex; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+  font-size: 13px; line-height: 1.5; align-items: flex-start;
+}
+.tip-row:last-child { border-bottom: none; }
+.tip-label {
+  font-size: 10px; font-weight: 700;
+  font-family: 'Space Mono', monospace;
+  padding: 3px 8px; border-radius: 4px;
+  white-space: nowrap; flex-shrink: 0; margin-top: 1px;
+}
+.tip-blue   { background: rgba(79,158,255,0.12);  color: var(--accent-blue); }
+.tip-green  { background: rgba(0,229,160,0.12);   color: var(--accent-green); }
+.tip-amber  { background: rgba(255,179,71,0.12);  color: var(--accent-amber); }
+.tip-purple { background: rgba(183,148,244,0.12); color: var(--accent-purple); }
+
+/* Scroll animation */
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.layer { animation: slideIn 0.5s ease forwards; }
+.layer:nth-child(1) { animation-delay: 0.05s; opacity: 0; }
+.layer:nth-child(2) { animation-delay: 0.15s; opacity: 0; }
+.layer:nth-child(3) { animation-delay: 0.25s; opacity: 0; }
+.layer:nth-child(4) { animation-delay: 0.35s; opacity: 0; }
+.layer:nth-child(5) { animation-delay: 0.45s; opacity: 0; }
+.flow-connector { animation: slideIn 0.4s ease forwards; opacity: 0; }
+.flow-connector:nth-of-type(2) { animation-delay: 0.1s; }
+.flow-connector:nth-of-type(3) { animation-delay: 0.2s; }
+.flow-connector:nth-of-type(4) { animation-delay: 0.3s; }
+.flow-connector:nth-of-type(5) { animation-delay: 0.4s; }
+</style>
+</head>
+<body>
+
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+<div class="orb orb3"></div>
+
+<header>
+  <div class="logo-row">
+    <div class="logo-icon">☁️</div>
+    <div>
+      <h1>Adobe Express — <span>AWS Architecture</span></h1>
+      <div class="subtitle">github.com/Karthickgreets99/adobe-express-fullstack-mock</div>
+    </div>
+  </div>
+  <div class="header-badges">
+    <span class="badge badge-blue">CloudFormation</span>
+    <span class="badge badge-green">Production Ready</span>
+    <span class="badge badge-amber">7 AWS Services</span>
+    <span class="badge badge-purple">Engineering Manager</span>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('arch',this)">Architecture</button>
+  <button class="tab-btn" onclick="switchTab('flow',this)">Data Flow Sequence</button>
+  <button class="tab-btn" onclick="switchTab('stats',this)">Capacity + Stats</button>
+</div>
+
+<!-- ═══════════ TAB 1: ARCHITECTURE ═══════════ -->
+<div class="canvas active" id="tab-arch">
+  <div class="arch-wrapper">
+
+    <!-- CLIENT LAYER -->
+    <div class="layer layer-client">
+      <div class="layer-label">
+        <div class="layer-dot" style="background:var(--accent-blue)"></div>
+        <span class="layer-label-text">Client</span>
+      </div>
+      <div class="layer-content">
+        <div class="layer-inner-label">Internet / Client Layer</div>
+        <div class="services">
+          <div class="svc svc-blue" onclick="showPanel('browser')">
+            <div class="svc-icon">🌐</div>
+            <div class="svc-name">Browser / Mobile</div>
+            <div class="svc-desc">React 18 · TypeScript · Web Components</div>
+          </div>
+          <div class="svc svc-cyan" onclick="showPanel('apigw')">
+            <div class="svc-tag tag-pri">GATEWAY</div>
+            <div class="svc-icon">🔀</div>
+            <div class="svc-name">API Gateway</div>
+            <div class="svc-desc">Auth · Rate limit · SSL · Routing</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-connector">
+      <div class="flow-tags">
+        <span class="flow-tag">HTTPS</span>
+        <span class="flow-tag">JWT Bearer</span>
+      </div>
+      <div class="flow-line"></div>
+      <div class="flow-arrow">↓</div>
+    </div>
+
+    <!-- EDGE LAYER -->
+    <div class="layer layer-edge">
+      <div class="layer-label">
+        <div class="layer-dot" style="background:var(--accent-green)"></div>
+        <span class="layer-label-text">Edge / CDN</span>
+      </div>
+      <div class="layer-content">
+        <div class="layer-inner-label">CDN / Edge Layer — AWS CloudFront</div>
+        <div class="services">
+          <div class="svc svc-green" onclick="showPanel('cloudfront')">
+            <div class="svc-tag tag-aws">AWS</div>
+            <div class="svc-icon">⚡</div>
+            <div class="svc-name">CloudFront</div>
+            <div class="svc-desc">Global edge · HTTP/2 · OAI access</div>
+          </div>
+          <div class="svc svc-green" onclick="showPanel('s3')">
+            <div class="svc-tag tag-p0">PRIVATE</div>
+            <div class="svc-icon">🗄️</div>
+            <div class="svc-name">S3 Bucket</div>
+            <div class="svc-desc">Private ACL · Versioning · SSE</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-connector">
+      <div class="flow-tags">
+        <span class="flow-tag">Signed URLs</span>
+        <span class="flow-tag">REST API</span>
+      </div>
+      <div class="flow-line"></div>
+      <div class="flow-arrow">↓</div>
+    </div>
+
+    <!-- COMPUTE LAYER -->
+    <div class="layer layer-compute">
+      <div class="layer-label">
+        <div class="layer-dot" style="background:var(--accent-purple)"></div>
+        <span class="layer-label-text">Compute</span>
+      </div>
+      <div class="layer-content">
+        <div class="layer-inner-label">Compute / App Layer — Node.js + Express</div>
+        <div class="services">
+          <div class="svc svc-purple" onclick="showPanel('nodejs')">
+            <div class="svc-icon">🟢</div>
+            <div class="svc-name">Node.js API</div>
+            <div class="svc-desc">Express · JWT Auth · TypeScript</div>
+          </div>
+          <div class="svc svc-green" onclick="showPanel('redis')">
+            <div class="svc-tag tag-cache">CACHE</div>
+            <div class="svc-icon">⚡</div>
+            <div class="svc-name">ElastiCache Redis</div>
+            <div class="svc-desc">Primary + replica · Auto failover</div>
+          </div>
+          <div class="svc svc-purple" onclick="showPanel('lambda')">
+            <div class="svc-tag tag-aws">AWS</div>
+            <div class="svc-icon">λ</div>
+            <div class="svc-name">Lambda</div>
+            <div class="svc-desc">Image resize · Thumbnail gen</div>
+          </div>
+          <div class="svc svc-purple" onclick="showPanel('kafka')">
+            <div class="svc-icon">📨</div>
+            <div class="svc-name">Kafka / SQS</div>
+            <div class="svc-desc">Analytics events · Async jobs</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-connector">
+      <div class="flow-tags">
+        <span class="flow-tag">SQL (parameterised)</span>
+        <span class="flow-tag">Encrypted</span>
+      </div>
+      <div class="flow-line"></div>
+      <div class="flow-arrow">↓</div>
+    </div>
+
+    <!-- DATA LAYER -->
+    <div class="layer layer-data">
+      <div class="layer-label">
+        <div class="layer-dot" style="background:var(--accent-red)"></div>
+        <span class="layer-label-text">Data</span>
+      </div>
+      <div class="layer-content">
+        <div class="layer-inner-label">Data / Storage Layer — Encrypted at rest</div>
+        <div class="services">
+          <div class="svc svc-red" onclick="showPanel('rds')">
+            <div class="svc-tag tag-p0">MULTI-AZ</div>
+            <div class="svc-icon">🐬</div>
+            <div class="svc-name">RDS MySQL 8.0</div>
+            <div class="svc-desc">Users · Projects · Assets · Exports</div>
+          </div>
+          <div class="svc svc-red" onclick="showPanel('cassandra')">
+            <div class="svc-icon">🔵</div>
+            <div class="svc-name">Cassandra</div>
+            <div class="svc-desc">Analytics · High write throughput</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-connector">
+      <div class="flow-tags">
+        <span class="flow-tag">Logs + Metrics</span>
+        <span class="flow-tag">Alarms</span>
+      </div>
+      <div class="flow-line"></div>
+      <div class="flow-arrow">↓</div>
+    </div>
+
+    <!-- OPS LAYER -->
+    <div class="layer layer-ops">
+      <div class="layer-label">
+        <div class="layer-dot" style="background:var(--accent-amber)"></div>
+        <span class="layer-label-text">Ops</span>
+      </div>
+      <div class="layer-content">
+        <div class="layer-inner-label">Observability / Ops Layer</div>
+        <div class="services">
+          <div class="svc svc-amber" onclick="showPanel('cloudwatch')">
+            <div class="svc-icon">📊</div>
+            <div class="svc-name">CloudWatch</div>
+            <div class="svc-desc">Logs · Alarms · Dashboards</div>
+          </div>
+          <div class="svc svc-amber" onclick="showPanel('cfn')">
+            <div class="svc-tag tag-aws">IaC</div>
+            <div class="svc-icon">📋</div>
+            <div class="svc-name">CloudFormation</div>
+            <div class="svc-desc">dev / staging / prod stacks</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════ TAB 2: DATA FLOW ═══════════ -->
+<div class="canvas" id="tab-flow">
+  <div class="flow-view">
+    <div class="flow-title">
+      <h2>Upload Design — Full Data Flow Sequence</h2>
+      <p>Every step from browser click to signed URL delivery</p>
+    </div>
+    <div class="sequence" id="seqContainer"></div>
+  </div>
+</div>
+
+<!-- ═══════════ TAB 3: STATS ═══════════ -->
+<div class="canvas" id="tab-stats">
+
+  <div class="stats-grid">
+    <div class="stat-card blue">
+      <div class="stat-icon">📥</div>
+      <div class="stat-val">1,160</div>
+      <div class="stat-lbl">Write QPS (uploads/sec)</div>
+    </div>
+    <div class="stat-card cyan">
+      <div class="stat-icon">📤</div>
+      <div class="stat-val">116K</div>
+      <div class="stat-lbl">Read QPS (peak)</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-icon">⚡</div>
+      <div class="stat-val">80%+</div>
+      <div class="stat-lbl">Redis cache hit target</div>
+    </div>
+    <div class="stat-card amber">
+      <div class="stat-icon">🗄️</div>
+      <div class="stat-val">90 TB</div>
+      <div class="stat-lbl">Estimated storage / 5 yrs</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-icon">🔐</div>
+      <div class="stat-val">100%</div>
+      <div class="stat-lbl">Private S3 — no public ACL</div>
+    </div>
+    <div class="stat-card purple">
+      <div class="stat-icon">🔄</div>
+      <div class="stat-val">&lt;60s</div>
+      <div class="stat-lbl">RDS Multi-AZ failover time</div>
+    </div>
+  </div>
+
+  <div class="tips-section">
+    <div class="tips-title">Interview talking points — say these out loud</div>
+    <div class="tip-row">
+      <span class="tip-label tip-blue">Storage</span>
+      <span>"All S3 uploads are private ACL by design. Users never get a direct S3 URL — they get a signed URL via CloudFront with a 1-hour expiry. If the URL leaks, it expires."</span>
+    </div>
+    <div class="tip-row">
+      <span class="tip-label tip-green">Caching</span>
+      <span>"Redis sits between the API and MySQL. At 116,000 read requests per second, without caching MySQL would fall over. 80% cache hit means most reads never touch the database."</span>
+    </div>
+    <div class="tip-row">
+      <span class="tip-label tip-amber">Scale</span>
+      <span>"Write QPS is ~1,160/sec which a single MySQL cluster handles fine. Read QPS at 116K/sec is why we need Redis and read replicas — that's the 100:1 read/write ratio."</span>
+    </div>
+    <div class="tip-row">
+      <span class="tip-label tip-purple">IaC</span>
+      <span>"Every resource is provisioned via CloudFormation — environment-aware, versioned, repeatable. Dev gets a single-AZ RDS, prod gets Multi-AZ with deletion protection. Same template, different parameters."</span>
+    </div>
+    <div class="tip-row">
+      <span class="tip-label tip-blue">Security</span>
+      <span>"Two SQL injection fixes in the codebase — all queries are parameterised. bcrypt with 12 salt rounds for passwords. JWT tokens validated at the API Gateway before any service is reached."</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════ DETAIL PANEL ═══════════ -->
+<div class="detail-panel" id="detailPanel">
+  <div class="panel-header">
+    <button class="panel-close" onclick="closePanel()">✕</button>
+    <div id="panelContent"></div>
+  </div>
+  <div class="panel-body" id="panelBody"></div>
+</div>
+
+<script>
+// ── Tab switching ──────────────────────────
+function switchTab(name, btn) {
+  document.querySelectorAll('.canvas').forEach(c => c.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  closePanel();
+  if (name === 'flow') initSequence();
+}
+
+// ── Sequence data ──────────────────────────
+const steps = [
+  { num:'01', color:'#4f9eff', title:'Client request', desc:'Browser sends POST /api/assets/upload with multipart form data and JWT Bearer token in Authorization header.', actors:['Browser','HTTPS','JWT Bearer'], arrow:'→' },
+  { num:'02', color:'#00d4ff', title:'API Gateway — auth + rate limit', desc:'Gateway validates JWT signature. Checks rate limit: 50 uploads/hour per userId. SSL terminates here. Routes to Node.js API.', actors:['API Gateway','JWT Verify','Rate Limiter'], arrow:'→' },
+  { num:'03', color:'#b794f4', title:'Auth middleware', desc:'requireAuth middleware extracts userId from verified JWT payload. Attaches req.user. No userId from request body — only from token.', actors:['requireAuth','multer','Validation'], arrow:'→' },
+  { num:'04', color:'#b794f4', title:'File validation', desc:'Validate MIME type against whitelist [jpeg, png, webp, mp4]. Check file size ≤ 50MB. Reject with 400 before touching S3.', actors:['MIME check','Size check','Whitelist'], arrow:'→' },
+  { num:'05', color:'#00e5a0', title:'S3 upload — private', desc:'Generate UUID-based S3 key (never user-controlled). Auto-compress images > 2MB via sharp. Upload with ACL: private. Never public-read.', actors:['s3Service','UUID key','sharp.js','Private ACL'], arrow:'→' },
+  { num:'06', color:'#00e5a0', title:'Database transaction', desc:'withTransaction() — atomic INSERT into assets table. If DB fails, S3 upload already happened but no orphan record created. Parameterised query — no SQL injection.', actors:['withTransaction','MySQL','Parameterised'], arrow:'→' },
+  { num:'07', color:'#00d4ff', title:'Signed URL generation', desc:'s3.getSignedUrl() generates a CloudFront-signed URL with 1-hour expiry. This is what the client receives — never the raw S3 path.', actors:['CloudFront','Signed URL','1hr TTL'], arrow:'→' },
+  { num:'08', color:'#4f9eff', title:'Response to client', desc:'Return { assetId, signedUrl, cdnUrl, width, height, fileSize }. Client uses signedUrl to display the image immediately.', actors:['201 Created','signedUrl','dimensions'], arrow:'✓' },
+  { num:'09', color:'#ffb347', title:'Async analytics (non-blocking)', desc:'Kafka/SQS receives click event asynchronously. Analytics pipeline writes to Cassandra. This never blocks the main upload response.', actors:['Kafka','Cassandra','Async'], arrow:'→' },
+  { num:'10', color:'#ffb347', title:'CloudWatch logging', desc:'All request logs, timing metrics, and error counts flow to CloudWatch. Alarm triggers if 5xx rate exceeds 1% over 5 minutes.', actors:['CloudWatch','5xx Alarm','p99 latency'], arrow:'✓' },
+];
+
+function initSequence() {
+  const c = document.getElementById('seqContainer');
+  if (c.children.length > 0) return;
+  steps.forEach((s, i) => {
+    const row = document.createElement('div');
+    row.className = 'seq-row';
+    row.innerHTML = `
+      <div class="seq-num" style="background:${s.color}22;color:${s.color};border:1px solid ${s.color}44">${s.num}</div>
+      <div class="seq-content">
+        <div class="seq-title">${s.title}</div>
+        <div class="seq-desc">${s.desc}</div>
+        <div class="seq-actors">${s.actors.map(a=>`<span class="seq-actor">${a}</span>`).join('')}</div>
+      </div>
+      <div class="seq-arrow" style="color:${s.color}">${s.arrow}</div>
+    `;
+    c.appendChild(row);
+    setTimeout(() => row.classList.add('visible'), i * 80 + 100);
+  });
+}
+
+// ── Detail panel data ──────────────────────
+const panels = {
+  browser: {
+    icon:'🌐', title:'Browser / Mobile', svc:'Frontend — React 18',
+    config:[['Framework','React 18 + TypeScript'],['Components','Web Components, Vue-compat'],['Auth','JWT in memory (not localStorage)'],['Build','Vite / Webpack'],['Mobile','Progressive Web App']],
+    why:"React 18 concurrent features give the canvas real-time performance. TypeScript catches type errors at compile time — critical for a large EM team reviewing PRs.",
+    security:['JWT stored in memory — not localStorage (XSS safe)','HTTPS enforced — no mixed content','CSP headers prevent script injection']
+  },
+  apigw: {
+    icon:'🔀', title:'API Gateway', svc:'AWS API Gateway / Kong',
+    config:[['Auth','JWT Bearer validation'],['Rate limit','100 req / 15 min per IP'],['Upload limit','50 uploads / hour / user'],['SSL','TLS 1.2+ termination'],['Routing','Path-based to microservices']],
+    why:"Single entry point for all traffic. Auth and rate limiting handled once here — individual services stay focused on business logic. One security boundary to audit instead of many.",
+    security:['All JWT validated before any service is reached','Rate limiting prevents DDoS and credential stuffing','Full request audit log to CloudWatch']
+  },
+  cloudfront: {
+    icon:'⚡', title:'CloudFront CDN', svc:'AWS CloudFront',
+    config:[['Price class','PriceClass_100 (global)'],['Protocol','HTTPS only — redirect HTTP'],['HTTP version','HTTP/2'],['OAI','Origin Access Identity'],['Cache TTL','Managed-CachingOptimized']],
+    why:"Users in Tokyo get assets from a Tokyo edge node — not from us-east-1. Critical for Adobe Express global reach. OAI means S3 is never directly accessible.",
+    security:['S3 bucket inaccessible without CloudFront OAI','HTTPS enforced end-to-end','Signed URLs for private asset delivery']
+  },
+  s3: {
+    icon:'🗄️', title:'S3 Asset Storage', svc:'AWS S3',
+    config:[['ACL','Private — never public-read'],['Key format','users/{userId}/assets/{uuid}.{ext}'],['Versioning','Enabled'],['Encryption','SSE-S3 at rest'],['Lifecycle','Delete old versions after 30d'],['Access','Via signed URL — 1hr expiry']],
+    why:"P0 security decision — using public-read ACL is the #1 mistake in upload implementations. Every file is private. UUID keys prevent path traversal attacks.",
+    security:['Public access blocked at bucket policy','UUID key — user cannot control S3 path','Signed URLs expire — leaked URL becomes useless','Versioning protects against accidental deletion']
+  },
+  nodejs: {
+    icon:'🟢', title:'Node.js API Server', svc:'Express + TypeScript',
+    config:[['Runtime','Node.js 18 LTS'],['Framework','Express 4.18'],['Auth','JWT + bcrypt (rounds: 12)'],['SQL','Parameterised — no injection'],['Middleware','helmet, cors, rate-limit']],
+    why:"All SQL uses parameterised queries — the most common backend vulnerability eliminated. bcrypt with 12 rounds is current security standard. helmet.js sets secure HTTP headers automatically.",
+    security:['No template literal SQL — ever','Parameterised queries on all DB calls','bcrypt 12 rounds for all passwords','CORS restricted to allowed origins']
+  },
+  redis: {
+    icon:'⚡', title:'ElastiCache Redis', svc:'AWS ElastiCache',
+    config:[['Node type','cache.t3.micro'],['Replicas','1 (primary + 1 replica)'],['Failover','Automatic'],['Encryption','At rest + in transit (TLS)'],['Eviction','LRU policy'],['TTL search','5 minutes'],['TTL assets','1 hour']],
+    why:"At 116,000 read QPS, Redis is what keeps MySQL alive. 80%+ cache hit rate means most reads never reach the database. LRU eviction keeps the hottest templates permanently warm.",
+    security:['Encrypted in transit (TLS)','Encrypted at rest','VPC-isolated — not internet accessible','No sensitive PII stored in cache']
+  },
+  lambda: {
+    icon:'λ', title:'AWS Lambda', svc:'Serverless Functions',
+    config:[['Runtime','Node.js 18'],['Triggers','S3 events, API Gateway'],['Use cases','Image resize, thumbnails'],['Timeout','30 seconds max'],['Memory','512MB - 1GB'],['Scaling','0 to 1000 concurrent']],
+    why:"Image processing is bursty — 100 uploads in 10 seconds then nothing for 5 minutes. Lambda scales to zero. No idle server costs. Handles traffic spikes without pre-provisioning.",
+    security:['IAM role — minimum required permissions','No long-lived credentials','VPC access to internal resources only']
+  },
+  kafka: {
+    icon:'📨', title:'Kafka / SQS Queue', svc:'Event Streaming',
+    config:[['Use case','Analytics events, async jobs'],['Pattern','Fire and forget — non-blocking'],['Consumer','Cassandra writer service'],['DLQ','Dead letter queue for failures'],['Retention','7 days']],
+    why:"Analytics writes must never block the upload response. Kafka decouples the critical path from non-critical work. If analytics processing is slow, uploads remain fast.",
+    security:['No PII in event payloads','Encrypted in transit','Event schema validation at producer']
+  },
+  rds: {
+    icon:'🐬', title:'RDS MySQL 8.0', svc:'AWS RDS',
+    config:[['Engine','MySQL 8.0'],['Dev instance','db.t3.micro'],['Prod Multi-AZ','Yes — automatic failover'],['Backup retention','7 days'],['Encryption','StorageEncrypted: true'],['Deletion protection','Enabled in production'],['Password','SSM Parameter Store']],
+    why:"ACID guarantees for critical data — user accounts, project ownership, asset metadata. Multi-AZ means a database hardware failure triggers automatic failover in under 60 seconds.",
+    security:['Encrypted at rest — all data'],['Deletion protection in prod'],['Credentials via SSM — never hardcoded'],['VPC-isolated — no public endpoint']
+  },
+  cassandra: {
+    icon:'🔵', title:'Cassandra', svc:'Analytics Database',
+    config:[['Use case','Click events, analytics'],['Write speed','High throughput optimised'],['Consistency','Eventual (acceptable for analytics)'],['Scaling','Horizontal — add nodes'],['Separation','Isolated from user data']],
+    why:"MySQL cannot handle 116,000 analytics writes per second. Cassandra is designed for exactly this workload — massive write throughput, linear horizontal scaling. Eventual consistency is acceptable for analytics.",
+    security:['No PII in analytics tables','Separate from user data','Kafka async pipeline — never blocks requests']
+  },
+  cloudwatch: {
+    icon:'📊', title:'CloudWatch', svc:'AWS CloudWatch',
+    config:[['Logs','All API request logs'],['Alarm: 5xx rate','>1% over 5 min = page on-call'],['Alarm: latency','p99 > 500ms = alert'],['Alarm: errors','Upload failures > 5/min'],['Retention','30 days'],['Dashboards','Real-time service health']],
+    why:"Without CloudWatch you are flying blind. Alarms on 5xx rate and p99 latency mean the on-call engineer gets paged before users start reporting issues. Every production service needs this.",
+    security:['Security audit trail for all requests','Alert on unusual traffic patterns (potential attack)','Log retention meets compliance requirements']
+  },
+  cfn: {
+    icon:'📋', title:'CloudFormation', svc:'Infrastructure as Code',
+    config:[['Environments','dev / staging / prod'],['Dev RDS','Single-AZ, no deletion protection'],['Prod RDS','Multi-AZ + deletion protection'],['Params','SSM Parameter Store for secrets'],['CI/CD','GitHub Actions deploys stacks'],['Drift detection','Enabled']],
+    why:"Infrastructure as code means every environment is identical and reproducible. Spin up a new staging environment in 10 minutes. No snowflake servers. No manual config drift.",
+    security:['Secrets via SSM — never in template source','Environment-specific security posture','Drift detection catches manual changes']
+  }
+};
+
+function showPanel(key) {
+  const d = panels[key];
+  if (!d) return;
+  document.querySelectorAll('.svc').forEach(s => s.classList.remove('selected'));
+  event.currentTarget.classList.add('selected');
+
+  document.getElementById('panelContent').innerHTML = `
+    <div class="panel-icon">${d.icon}</div>
+    <div class="panel-title">${d.title}</div>
+    <div class="panel-svc">${d.svc}</div>
+  `;
+
+  const secItems = Array.isArray(d.security[0]) ? d.security.map(s => s[0]) : d.security;
+
+  document.getElementById('panelBody').innerHTML = `
+    <div class="panel-section">
+      <div class="panel-section-title">Configuration</div>
+      ${d.config.map(([k,v]) => `<div class="config-row"><span class="config-key">${k}</span><span class="config-val">${v}</span></div>`).join('')}
+    </div>
+    <div class="panel-section">
+      <div class="panel-section-title">Why this decision</div>
+      <div class="why-box">${d.why}</div>
+    </div>
+    <div class="panel-section">
+      <div class="panel-section-title">Security</div>
+      ${secItems.map(s => `<div class="sec-item"><span class="sec-check">✓</span><span>${s}</span></div>`).join('')}
+    </div>
+  `;
+
+  document.getElementById('detailPanel').classList.add('open');
+}
+
+function closePanel() {
+  document.getElementById('detailPanel').classList.remove('open');
+  document.querySelectorAll('.svc').forEach(s => s.classList.remove('selected'));
+}
+</script>
+</body>
+</html>
